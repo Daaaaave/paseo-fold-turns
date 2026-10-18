@@ -1,0 +1,68 @@
+{
+  "name": "paseo-fold-turns",
+  "version": "0.2.0",
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "node --test tests/*.test.ts tests/*.test.mjs",
+    "check:package": "node scripts/check-package.mjs"
+  },
+  "devDependencies": {
+    "@getpaseo/client": "0.11.2",
+    "@getpaseo/plugin": "0.11.2",
+    "@tanstack/react-virtual": "3.13.21",
+    "@types/markdown-it": "14.1.2",
+    "@types/node": "24.10.0",
+    "@types/react": "19.1.0",
+    "esbuild": "0.25.12",
+    "jsdom": "26.1.0",
+    "react": "19.1.0",
+    "react-dom": "19.1.0",
+    "react-native": "0.81.5",
+    "react-native-web": "0.21.2",
+    "typescript": "5.9.3",
+    "zod": "4.4.3"
+  },
+  "dependencies": {
+    "markdown-it": "14.3.3"
+  },
+  "description": "Automatically collapse completed tool calls, thinking, and progress messages into one expandable row. Keep the final answer visible.",
+  "license": "MIT",
+  "keywords": [
+    "paseo",
+    "paseo-plugin",
+    "fold",
+    "collapse",
+    "tool-calls",
+    "thinking",
+    "chat",
+    "completed-turns"
+  ],
+  "files": [
+    "paseo-plugin.json",
+    "npm-shrinkwrap.json",
+    "OVERVIEW.md",
+    "index.client.tsx",
+    "index.server.ts",
+    "tsconfig.json",
+    "client/",
+    "server/",
+    "shared/",
+    "assets/"
+  ],
+  "engines": {
+    "node": ">=22.18.0"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Daaaaave/paseo-fold-turns.git"
+  },
+  "homepage": "https://github.com/Daaaaave/paseo-fold-turns#readme",
+  "bugs": {
+    "url": "https://github.com/Daaaaave/paseo-fold-turns/issues"
+  }
+}

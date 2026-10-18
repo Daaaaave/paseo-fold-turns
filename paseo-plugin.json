@@ -1,0 +1,11 @@
+{
+  "id": "completed-turns",
+  "name": "Paseo Fold Turns",
+  "description": "Collapse completed tool calls, thinking, progress messages and context compaction into one expandable row above the native final answer.",
+  "requirements": {
+    "paseo": ">=0.11.2 <0.12.0"
+  },
+  "media": [
+    "assets/preview.png"
+  ]
+}
