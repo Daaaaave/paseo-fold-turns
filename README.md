@@ -89,12 +89,21 @@ The `publish.yml` workflow publishes stable version tags such as `v0.2.1` to npm
 using trusted publishing. It runs the checks and publishes the inspected tarball;
 it does not connect to any Paseo daemon.
 
-For the first publication, log into npm, run the checks, create an artifact with
-`npm pack --ignore-scripts --pack-destination .artifacts`, and publish that tarball
-with `npm publish .artifacts/paseo-fold-turns-0.2.0.tgz --access public`. Create the
-`.artifacts` directory first. Then configure the npm package's trusted publisher
-for `Daaaaave/paseo-fold-turns`, workflow `publish.yml`, with direct publication
-allowed. Future releases use a new matching package version and tag.
+The npm package trusts `Daaaaave/paseo-fold-turns`, workflow `publish.yml`.
+GitHub Actions authenticates to npm with a short-lived OIDC identity; maintainers
+do not need to supply an npm token to the workflow.
+
+To release from a clean `main` checkout:
+
+```sh
+npm version patch
+git push origin main --follow-tags
+```
+
+The tag must match the package version. Stable releases go to npm's `latest` tag.
+The workflow checks repository identity, TypeScript, tests, package contents and
+production dependency audit before publishing. A fork must use its own npm package
+identity and trusted publisher configuration.
 
 Do not store npm tokens in repository files. See
 [npm trusted publishing](https://docs.npmjs.com/trusted-publishers/) and
