@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.2
+
+Remove the Paseo version restriction so daemon and app updates do not block
+plugin loading. Package checks enforce the unrestricted manifest.
+
 ## 0.2.1
 
 Document the configured GitHub Actions trusted publisher and the token-free

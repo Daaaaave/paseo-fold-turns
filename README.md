@@ -12,8 +12,8 @@ normal Markdown and answer controls.
 
 ## Install
 
-Requires Paseo **>=0.11.2 <0.12.0** on both the daemon and connected app, with
-plugins enabled. Node and npm must be available on the daemon host.
+Enable plugins in Paseo. Node and npm must be available on the daemon host.
+The plugin does not restrict the daemon or connected app by Paseo version.
 
 ```sh
 paseo plugin install npm:paseo-fold-turns
@@ -50,9 +50,9 @@ contain at most 40 entries; individual text fields are limited to 16,000 charact
 with a truncation notice. Loaded pages are cached in client memory.
 
 Position preservation uses adapters for Paseo's web virtualizer and React Native
-list internals. Compatibility is deliberately limited to Paseo 0.11.x and must be
-reviewed for later versions. Automated tests, Hermes compilation, and browser
-models cover compatibility; they do not replace testing on physical devices.
+list internals. Changes to those internals may need plugin fixes, but a Paseo
+version change does not block loading. Automated tests, Hermes compilation, and
+browser models do not replace testing on physical devices.
 
 ## Updates
 

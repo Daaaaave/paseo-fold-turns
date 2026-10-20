@@ -12,7 +12,7 @@ assert.equal(pkg.private, undefined);
 assert.equal(lock.name, pkg.name);
 assert.equal(lock.version, pkg.version);
 assert.equal(manifest.id, "completed-turns");
-assert.equal(manifest.requirements.paseo, ">=0.11.2 <0.12.0");
+assert.equal(manifest.requirements.paseo, "*", "Paseo versions must not block plugin loading");
 assert.equal(manifest.build, undefined, "npm already installs the production dependency tree");
 const npm = process.platform === "win32" ? "npm.cmd" : "npm";
 const [artifact] = JSON.parse(execFileSync(npm, ["pack", "--dry-run", "--ignore-scripts", "--json"], {cwd: root, encoding: "utf8"}));
