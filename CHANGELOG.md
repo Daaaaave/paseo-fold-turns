@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.3
+
+Fold completed work even when a preview server or another background command is
+still marked running. Live commands retain their native status and controls;
+active turns, pending permissions and unfinished work remain visible.
+
 ## 0.2.2
 
 Remove the Paseo version restriction so daemon and app updates do not block

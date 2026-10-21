@@ -32,6 +32,10 @@ Running turns, pending questions and permissions, errors, ambiguous entries, and
 incomplete history stay visible. This plugin changes presentation, not the agent's
 context or stored conversation.
 
+A completed answer can leave a preview server or another background command
+running. That command keeps its native status and controls while the completed
+process folds normally; it does not hold the entire turn open.
+
 On desktop and web, expanded turns use the existing Paseo rows. Android and iOS
 use one persistent inline process block with selectable Markdown, expandable tool
 details, code copying, and additional entries loaded on demand. The final answer

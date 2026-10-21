@@ -114,14 +114,18 @@ export function indexTurns(agentId: string, epoch: string, entries: Entry[], sta
     const hasStart = rows[0].item.type === "user_message" || position > 0 || !state.hasOlder;
     const final = rows.findLastIndex(row => row.item.type === "assistant_message" && !!row.item.text?.trim());
     const busy = (isLast && (state.running || state.pending || state.failed)) || rows.some(row => row.turnId && row.turnId === state.activeTurnId);
-    const broken = rows.some(row => row.item.type === "error" || (row.item.type === "tool_call" && row.item.status === "running"));
+    const runningTool = (row: Entry) => row.item.type === "tool_call" && row.item.status === "running";
+    const broken = rows.some(row => row.item.type === "error") || rows.slice(final + 1).some(runningTool);
     if (!hasStart || final < 0 || busy || broken) {
       for (const row of rows) { const key = keyOf(row); if (key) result.protected.push(key); }
       continue;
     }
     // The final answer, and any later notices, always retain native rendering.
     for (const row of rows.slice(final)) { const key = keyOf(row); if (key) result.protected.push(key); }
-    const process = rows.slice(0, final).filter(row => keyOf(row));
+    // A finished answer may leave a preview server or other background command
+    // running. Keep that command native without blocking the completed work's fold.
+    for (const row of rows.filter(runningTool)) { const key = keyOf(row); if (key) result.protected.push(key); }
+    const process = rows.slice(0, final).filter(row => keyOf(row) && !runningTool(row));
     if (!process.length) continue;
     const anchor = process[0];
     if (!Number.isFinite(Date.parse(anchor.timestamp))) {

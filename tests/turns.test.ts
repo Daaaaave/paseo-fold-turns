@@ -68,6 +68,39 @@ test("older completed turns still fold while the next turn is running", () => {
   assert.equal(roles.has("a:final"), false); assert.equal(roles.has("a:new-final"), false);
 });
 
+test("a background server does not prevent the completed process from folding", () => {
+  const background: Item = { type: "tool_call", callId: "preview-server", name: "shell", status: "running",
+    detail: { type: "shell", command: "npm run preview" } };
+  const rows = entries([...source.slice(0, 3), background, ...source.slice(3)]);
+  const index = indexTurns("agent", "epoch", rows, idle);
+  assert.equal(index.groups.length, 1);
+  assert.equal(summary(index.groups[0]), "3 tool calls, 1 message");
+  const roles = projectIndexes([index], new Set());
+  assert.equal(roles.get("a:progress")?.anchors.length, 1);
+  assert.equal(roles.get("t:call-0")?.hidden, true);
+  assert.equal(roles.has("t:preview-server"), false, "the live background command retains its native status and controls");
+  assert.equal(roles.has("a:final"), false);
+  assert.ok(index.protected.includes("t:preview-server"));
+  for (const state of [{ ...idle, running: true }, { ...idle, pending: true }, { ...idle, activeTurnId: "turn" }]) {
+    assert.equal(indexTurns("agent", "epoch", rows, state).groups.length, 0);
+  }
+});
+
+test("a running first tool stays native while later completed work hosts the disclosure", () => {
+  const rows = entries([source[0], { type: "tool_call", callId: "server", name: "shell", status: "running" }, ...source.slice(1)]);
+  const index = indexTurns("agent", "epoch", rows, idle);
+  assert.equal(index.groups.length, 1);
+  assert.equal(index.groups[0].anchor, "a:progress");
+  assert.equal(projectIndexes([index], new Set()).has("t:server"), false);
+});
+
+test("a running command after the latest message still indicates an unfinished process", () => {
+  const rows = entries([...source, { type: "tool_call", callId: "still-working", name: "shell", status: "running" }]);
+  assert.equal(indexTurns("agent", "epoch", rows, idle).groups.length, 0);
+  const onlyBackground = entries([source[0], { type: "tool_call", callId: "server", status: "running" }, source.at(-1)!]);
+  assert.equal(indexTurns("agent", "epoch", onlyBackground, idle).groups.length, 0);
+});
+
 test("expanding restores all intermediate rows in their original order and preserves final text", () => {
   const index = indexTurns("agent", "epoch", entries(source), idle);
   const roles = projectIndexes([index], new Set([index.groups[0].id]));
