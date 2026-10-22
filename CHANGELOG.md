@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.5
+
+Distinguish interrupted turns from successful answers, including provider capacity
+failures recorded as Paseo system messages and structured terminal errors.
+Label the preceding process **Interrupted**, keep the error and any existing
+answer visible, and preserve native controls for background commands.
+Continuation requests stay separate from the interrupted turn.
+
 ## 0.2.4
 
 Keep the native fold control in the initially loaded history page when opening

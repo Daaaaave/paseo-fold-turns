@@ -29,8 +29,9 @@ Use one timeline-folding plugin at a time.
 ## What stays visible
 
 Running turns, pending questions and permissions, errors, ambiguous entries, and
-incomplete history stay visible. This plugin changes presentation, not the agent's
-context or stored conversation.
+incomplete history stay visible. Ended turns with a provider failure use an
+**Interrupted** fold for the preceding process while the error stays visible.
+This plugin changes presentation, not the agent's context or stored conversation.
 
 A completed answer can leave a preview server or another background command
 running. That command keeps its native status and controls while the completed
@@ -38,6 +39,8 @@ process folds normally; it does not hold the entire turn open.
 If Paseo records a later outcome for the same command as a separate row, the
 obsolete running placeholder disappears. The outcome, including failures,
 remains visible with its native controls.
+An interrupted agent turn does not prove that a background command stopped.
+Commands still recorded as running keep their native status and controls.
 
 On desktop and web, expanded turns use the existing Paseo rows. Android and iOS
 use one persistent inline process block with selectable Markdown, expandable tool

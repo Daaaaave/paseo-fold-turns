@@ -1,5 +1,5 @@
 import type { ProcessItem } from "./contracts.ts";
-import { coalesceCompactions, compactionLabel, entryKey, turnSegments, type Entry, type Group } from "./model.ts";
+import { coalesceCompactions, compactionLabel, entryKey, turnBoundary, turnSegments, type Entry, type Group } from "./model.ts";
 
 const FIELD_LIMIT = 16_000;
 export const PAGE_SIZE = 40;
@@ -39,7 +39,7 @@ export function processRecord(agentId: string, row: Entry): ProcessItem {
 export function processRows(agentId: string, epoch: string, entries: Entry[], group: Group): Entry[] {
   const keys = new Set(group.keys);
   const segment = turnSegments(entries).find(rows => group.id === `${agentId}:${epoch}:${rows[0].seqStart}`) ?? [];
-  const final = segment.findLastIndex(row => row.item.type === "assistant_message" && !!row.item.text?.trim());
+  const {at: final} = turnBoundary(segment);
   const rows = segment.slice(0, Math.max(0, final)).filter(row => { const key = entryKey(agentId, row); return key && keys.has(key); });
   return coalesceCompactions(rows);
 }

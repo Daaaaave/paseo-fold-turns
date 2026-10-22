@@ -2,7 +2,7 @@ import { defineRpc } from "@getpaseo/plugin";
 import { z } from "zod";
 import type { MarkdownNode } from "./markdown.ts";
 
-export const groupSchema = z.object({ id: z.string(), anchor: z.string(), at: z.number(), keys: z.array(z.string()), nativeAnchor: z.object({ key: z.string(), at: z.number() }).optional(), tools: z.number(), messages: z.number(), thinking: z.number(), compactions: z.number(), kinds: z.array(z.string()), markers: z.array(z.object({ key: z.string(), at: z.number(), signature: z.string() })) });
+export const groupSchema = z.object({ id: z.string(), anchor: z.string(), at: z.number(), keys: z.array(z.string()), nativeAnchor: z.object({ key: z.string(), at: z.number() }).optional(), outcome: z.literal("interrupted").optional(), tools: z.number(), messages: z.number(), thinking: z.number(), compactions: z.number(), kinds: z.array(z.string()), markers: z.array(z.object({ key: z.string(), at: z.number(), signature: z.string() })) });
 export const indexRpc = defineRpc({
   name: "turns.index",
   input: z.object({ agentId: z.string().min(1).max(256) }).strict(),

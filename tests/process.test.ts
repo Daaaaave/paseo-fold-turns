@@ -62,6 +62,15 @@ test("process reading fails closed if the turn becomes active or the epoch chang
   other.agent.timeline.refetch = async query => ({...await refetch(query), epoch: query.limit === 1 ? "changed" : "epoch"});
   assert.equal((await readProcess({agentId: "agent", groupId, cursor: 0}, other.context)).status, "stale");
 });
+
+test("an interrupted tool-only turn has readable native process pages without hiding its error", async () => {
+  const f = fixture([input[0], input[2], {type: "error", message: "Provider disconnected"}]);
+  assert.equal(f.index.groups.length, 1);
+  const result = await readProcess({agentId: "agent", groupId: f.index.groups[0].id, cursor: 0}, f.context);
+  assert.equal(result.status, "ok"); assert.equal(result.items.length, 1);
+  assert.equal(result.items[0].kind, "tool");
+  assert.equal(JSON.stringify(result).includes("Provider disconnected"), false);
+});
 test("large process pages are bounded, preserve chronology and expose the remaining cursor", async () => {
   const tools = Array.from({length: 70}, (_, i) => ({type: "tool_call", callId: `call-${i}`, name: "read_file", status: "completed", detail: {type: "read", filePath: `file-${i}`, content: "x".repeat(20_000)}}));
   const f = fixture([input[0], ...tools, input[3]]), groupId = f.index.groups[0].id;

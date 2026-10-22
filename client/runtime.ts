@@ -4,7 +4,7 @@ import { compactionSignature, itemKey, projectIndexes, runningToolSignature, typ
 import type { NativeFoldChange } from "../shared/native-anchor.ts";
 
 const TYPES = ["assistant_message", "reasoning", "tool_call", "compaction"] as const;
-const displayAnchors = (anchors: Role["anchors"]) => anchors.map(({ agentId, expanded, group: { id, at, tools, messages, thinking, compactions, kinds } }) => ({ agentId, expanded, group: { id, at, tools, messages, thinking, compactions, kinds } }));
+const displayAnchors = (anchors: Role["anchors"]) => anchors.map(({ agentId, expanded, group: { id, at, tools, messages, thinking, compactions, kinds, outcome } }) => ({ agentId, expanded, group: { id, at, tools, messages, thinking, compactions, kinds, ...(outcome ? {outcome} : {}) } }));
 export interface TurnRuntime {
   readonly inline: boolean;
   mount(agentId: string): () => void;

@@ -11,6 +11,7 @@ export interface Entry { item: Item; seqStart: number; seqEnd: number; timestamp
 export interface Group {
   id: string; anchor: string; at: number; keys: string[];
   nativeAnchor?: { key: string; at: number };
+  outcome?: "interrupted";
   tools: number; messages: number; thinking: number; compactions: number; kinds: string[];
   markers: { key: string; at: number; signature: string }[];
 }
@@ -124,6 +125,22 @@ export function turnSegments(entries: Entry[]): Entry[][] {
   return segments;
 }
 
+/** Paseo emits provider failures as unscoped, ID-less assistant notices. */
+function isSystemFailure(row: Entry): boolean {
+  return row.item.type === "assistant_message" && !row.turnId && !row.item.messageId &&
+    /^\[System Error\]\s+\S/.test(row.item.text ?? "");
+}
+
+export function turnBoundary(rows: Entry[]): { at: number; interrupted: boolean } {
+  const answer = rows.findLastIndex(row => row.item.type === "assistant_message" && !!row.item.text?.trim());
+  const error = rows.findLastIndex(row => row.item.type === "error");
+  const lastAnswer = rows[answer];
+  const systemFailure = !!lastAnswer && isSystemFailure(lastAnswer);
+  // A structured error after a text answer must not pull that answer into the
+  // fold. A tool-only failed turn uses its error as the visible boundary.
+  return {at: answer >= 0 ? answer : error, interrupted: systemFailure || error >= 0 && error >= answer};
+}
+
 /** Paseo completes a compaction in its original loading row, preserving time. */
 export function coalesceCompactions(rows: Entry[]): Entry[] {
   const result: Entry[] = [], pending: number[] = [];
@@ -138,7 +155,7 @@ export function coalesceCompactions(rows: Entry[]): Entry[] {
   return result;
 }
 
-/** Only complete turns with a proven final text response are eligible. */
+/** Only ended turns with a visible text response or failure are eligible. */
 export function indexTurns(agentId: string, epoch: string, entries: Entry[], state: { running: boolean; activeTurnId?: string | null; pending: boolean; failed: boolean; hasOlder: boolean }): TurnIndex {
   const result: TurnIndex = { agentId, epoch, groups: [], protected: [] };
   const keyOf = (entry: Entry) => entryKey(agentId, entry);
@@ -152,10 +169,10 @@ export function indexTurns(agentId: string, epoch: string, entries: Entry[], sta
   for (const [position, rows] of segments.entries()) {
     const isLast = position === segments.length - 1;
     const hasStart = rows[0].item.type === "user_message" || position > 0 || !state.hasOlder;
-    const final = rows.findLastIndex(row => row.item.type === "assistant_message" && !!row.item.text?.trim());
-    const busy = (isLast && (state.running || state.pending || state.failed)) || rows.some(row => row.turnId && row.turnId === state.activeTurnId);
+    const {at: final, interrupted} = turnBoundary(rows);
+    const busy = (isLast && (state.running || state.pending || state.failed && !interrupted)) || rows.some(row => row.turnId && row.turnId === state.activeTurnId);
     const runningTool = (row: Entry) => row.item.type === "tool_call" && row.item.status === "running";
-    const broken = rows.some(row => row.item.type === "error") || rows.slice(final + 1).some(runningTool);
+    const broken = rows.slice(0, final).some(row => row.item.type === "error" || isSystemFailure(row)) || rows.slice(final + 1).some(runningTool);
     if (!hasStart || final < 0 || busy || broken) {
       for (const row of rows) { const key = keyOf(row); if (key) result.protected.push(key); }
       continue;
@@ -183,6 +200,7 @@ export function indexTurns(agentId: string, epoch: string, entries: Entry[], sta
     result.groups.push({
       id: `${agentId}:${epoch}:${rows[0].seqStart}`, anchor: keyOf(anchor)!, at: Date.parse(anchor.timestamp),
       nativeAnchor: Number.isFinite(nativeAt) ? { key: keyOf(nativeSource)!, at: nativeAt } : undefined,
+      ...(interrupted ? {outcome: "interrupted" as const} : {}),
       keys: [...new Set(process.map(row => keyOf(row)!))],
       tools: process.filter(row => row.item.type === "tool_call").length,
       messages: process.filter(row => row.item.type === "assistant_message").length,
@@ -227,11 +245,11 @@ export function projectIndexes(indexes: TurnIndex[], expanded: ReadonlySet<strin
   return roles;
 }
 
-export function summary(group: Pick<Group, "tools" | "messages" | "thinking" | "compactions">): string {
+export function summary(group: Pick<Group, "tools" | "messages" | "thinking" | "compactions" | "outcome">): string {
   const parts = [];
   if (group.tools) parts.push(`${group.tools} tool call${group.tools === 1 ? "" : "s"}`);
   if (group.messages) parts.push(`${group.messages} message${group.messages === 1 ? "" : "s"}`);
   if (!parts.length && group.thinking) parts.push(`${group.thinking} thinking block${group.thinking === 1 ? "" : "s"}`);
   if (!parts.length) parts.push(`${group.compactions || 1} context compaction${group.compactions > 1 ? "s" : ""}`);
-  return parts.join(", ");
+  return `${group.outcome === "interrupted" ? "Interrupted · " : ""}${parts.join(", ")}`;
 }

@@ -44,7 +44,63 @@ test("running, waiting, failed and incomplete turns remain visible", () => {
   }
   assert.equal(indexTurns("agent", "epoch", entries(source.slice(1)), { ...idle, hasOlder: true }).groups.length, 0);
   assert.equal(indexTurns("agent", "epoch", entries(source.slice(0, -1)), { ...idle, running: true }).groups.length, 0);
-  assert.equal(indexTurns("agent", "epoch", entries([...source, { type: "error", message: "Failure" }]), idle).groups.length, 0);
+  assert.equal(indexTurns("agent", "epoch", entries([...source.slice(0, 3), { type: "error", message: "Failure" }, ...source.slice(3)]), idle).groups.length, 0);
+});
+
+test("provider capacity failures mark an interrupted fold and preserve the error and live commands", async () => {
+  const monitor: Item = {type: "tool_call", callId: "gpu-monitor", name: "shell", status: "running"};
+  const failure: Item = {type: "assistant_message", text: "[System Error] Selected model is at capacity. Please try a different model."};
+  const rows = [...entries([...source.slice(0, -1), monitor]), {...entries([failure], "", 30)[0], turnId: undefined}];
+  for (const inline of [false, true]) {
+    const index = indexTurns("agent", "epoch", rows, {...idle, failed: true});
+    assert.equal(index.groups.length, 1);
+    assert.equal(summary(index.groups[0]), "Interrupted · 3 tool calls, 1 message");
+    assert.equal(index.groups[0].outcome, "interrupted");
+    const transforms = new Map<string, any>();
+    const runtime = createTurnRuntime({rpc: async () => ({status: "ok", ...index}),
+      addTimelineTransformer: (value: any) => {transforms.set(value.query.itemType, value); return () => transforms.delete(value.query.itemType);}} as any, inline);
+    try {
+      await runtime.refresh("agent");
+      assert.equal(transforms.get("assistant_message").transform({item: failure, phase: "complete"}), undefined);
+      assert.equal(transforms.get("tool_call").transform({item: monitor, phase: "streaming"}), undefined);
+      const host = inline ? source[5] : source[1];
+      const disclosure = transforms.get(host.type).transform({item: host, phase: "complete"}).items[0];
+      assert.equal(disclosure.data.anchors[0].group.outcome, "interrupted");
+    } finally {runtime.dispose();}
+    for (const state of [{...idle, running: true}, {...idle, pending: true}, {...idle, activeTurnId: "turn"}]) {
+      assert.equal(indexTurns("agent", "epoch", rows, state).groups.length, 0);
+    }
+  }
+});
+
+test("a structured terminal error can fold tools without an answer and keeps any preceding answer visible", () => {
+  for (const priorAnswer of [[], [source.at(-1)!]]) {
+    const rows = entries([source[0], source[3], ...priorAnswer, {type: "error", message: "Provider disconnected"}]);
+    const index = indexTurns("agent", "epoch", rows, {...idle, failed: true});
+    assert.equal(index.groups.length, 1);
+    assert.equal(index.groups[0].outcome, "interrupted");
+    assert.equal(projectIndexes([index], new Set()).has("a:final"), false);
+    assert.deepEqual(index.groups[0].keys, ["t:call-0"]);
+  }
+});
+
+test("quoted error text is not a system outcome and continuation remains a separate active turn", () => {
+  const quote = entries([...source.slice(0, -1), {type: "assistant_message", messageId: "answer", text: "[System Error] Example of the message you may see."}]);
+  assert.equal(indexTurns("agent", "epoch", quote, idle).groups[0].outcome, undefined);
+  assert.equal(indexTurns("agent", "epoch", quote, {...idle, failed: true}).groups.length, 0);
+  const failure = {...entries([{type: "assistant_message", text: "[System Error] Provider disconnected"}], "", 30)[0], turnId: undefined};
+  const rows = [...entries(source.slice(0, -1), "old"), failure, ...entries([
+    {type: "user_message", text: "Continue"}, {type: "assistant_message", messageId: "new-progress", text: "Continuing"},
+    {type: "tool_call", callId: "new-worker", status: "running"},
+  ], "new", 40)];
+  const index = indexTurns("agent", "epoch", rows, {...idle, running: true, activeTurnId: "new"});
+  assert.equal(index.groups.length, 1);
+  assert.equal(index.groups[0].outcome, "interrupted");
+  assert.equal(projectIndexes([index], new Set()).has("a:new-progress"), false);
+  assert.equal(projectIndexes([index], new Set()).has("t:new-worker"), false);
+  const ambiguous = [...entries(source.slice(0, -1)), failure,
+    {...entries([{type: "assistant_message", messageId: "later-answer", text: "An answer without a new turn boundary"}], "", 40)[0], turnId: undefined}];
+  assert.equal(indexTurns("agent", "epoch", ambiguous, idle).groups.length, 0, "an earlier system error cannot be hidden inside later activity");
 });
 
 test("long examples count every intermediate message and tool call once", () => {
