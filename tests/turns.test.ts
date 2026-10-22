@@ -101,6 +101,46 @@ test("a running command after the latest message still indicates an unfinished p
   assert.equal(indexTurns("agent", "epoch", onlyBackground, idle).groups.length, 0);
 });
 
+test("late tool outcomes retire only their exact obsolete running placeholder", async () => {
+  for (const inline of [false, true]) for (const status of ["completed", "failed", "canceled"]) {
+    const running: Item = {type: "tool_call", callId: "background", name: "shell", status: "running",
+      detail: {type: "shell", command: "run-worker", cwd: "/workspace"}};
+    const rows = entries([...source.slice(0, -1), running, source.at(-1)!]);
+    const outcome: Entry = {...entries([{...running, status, detail: {...running.detail as object, output: "Worker finished"}}], "", 30)[0], turnId: undefined};
+    const index = indexTurns("agent", "epoch", [...rows, outcome], idle);
+    const transforms = new Map<string, any>();
+    const runtime = createTurnRuntime({rpc: async () => ({status: "ok", ...index}),
+      addTimelineTransformer: (value: any) => {transforms.set(value.query.itemType, value); return () => transforms.delete(value.query.itemType);}} as any, inline);
+    try {
+      await runtime.refresh("agent");
+      const transform = (item: Item, phase = "streaming") => transforms.get("tool_call").transform({item, phase});
+      assert.deepEqual(transform(running), {items: []}, "a proven obsolete spinner is removed even though Paseo labels running tools streaming");
+      assert.equal(transform(outcome.item, "complete"), undefined, "the late outcome, including failures, keeps native rendering");
+      assert.equal(transform({...running, callId: "another-worker"}), undefined);
+      assert.equal(transform({...running, detail: {...running.detail as object, command: "new-worker"}}), undefined);
+      assert.equal(transforms.get("assistant_message").transform({item: source.at(-1), phase: "complete"}), undefined);
+    } finally {runtime.dispose();}
+  }
+});
+
+test("a restarted tool and an ambiguous call ID in another chat keep their live controls", async () => {
+  const running: Item = {type: "tool_call", callId: "background", name: "shell", status: "running", detail: {type: "shell", command: "run-worker"}};
+  const finished = entries([source[0], running, source.at(-1)!, {...running, status: "completed"}]);
+  const restarted = indexTurns("agent", "epoch", [...finished, ...entries([running], "later", 20)], idle);
+  const stale = indexTurns("agent", "epoch", finished, idle);
+  const other = indexTurns("other", "epoch", entries([source[0], running]), {...idle, running: true});
+  const transforms = new Map<string, any>();
+  let response = restarted;
+  const runtime = createTurnRuntime({rpc: async (_rpc: unknown, input: {agentId: string}) => ({status: "ok", ...(input.agentId === "other" ? other : response)}),
+    addTimelineTransformer: (value: any) => {transforms.set(value.query.itemType, value); return () => transforms.delete(value.query.itemType);}} as any, true);
+  try {
+    await runtime.refresh("agent");
+    assert.equal(transforms.get("tool_call").transform({item: running, phase: "streaming"}), undefined);
+    response = stale; await runtime.refresh("agent"); await runtime.refresh("other");
+    assert.equal(transforms.get("tool_call").transform({item: running, phase: "streaming"}), undefined);
+  } finally {runtime.dispose();}
+});
+
 test("expanding restores all intermediate rows in their original order and preserves final text", () => {
   const index = indexTurns("agent", "epoch", entries(source), idle);
   const roles = projectIndexes([index], new Set([index.groups[0].id]));
@@ -130,6 +170,76 @@ test("the runtime keeps final/user/streaming rows native and removes its registr
   runtime.toggle(index.groups[0].id);
   assert.equal(transforms.get("tool_call")!.transform({ item: source[3], phase: "complete" }), undefined);
   runtime.dispose(); assert.equal(transforms.size, 0);
+});
+
+test("opening or revisiting a native chat keeps a disclosure in its initially loaded history tail", async () => {
+  const rows = entries([
+    source[0], source[1],
+    ...Array.from({ length: 500 }, (_, i) => ({ type: "tool_call", callId: `long-${i}`, name: "shell", status: "completed" })),
+    source.at(-1)!,
+  ]);
+  const index = indexTurns("agent", "epoch", rows, idle);
+  const transforms = new Map<string, any>();
+  const runtime = createTurnRuntime({
+    rpc: async () => ({ status: "ok", ...index }),
+    addTimelineTransformer: (value: any) => { transforms.set(value.query.itemType, value); return () => transforms.delete(value.query.itemType); },
+  } as any, true);
+  try {
+    for (let visit = 0; visit < 2; visit++) {
+      await runtime.refresh("agent");
+      // The daemon can index 8,000 entries while the phone has only fetched a
+      // short tail. Hidden rows cannot require scrolling to an unloaded button.
+      const tail = rows.slice(-20);
+      const visible = tail.flatMap(({item}) => transforms.get(item.type)?.transform({item, phase: "complete"})?.items ?? [item]);
+      const disclosures = visible.filter(item => item.kind === "turn-disclosure");
+      assert.equal(disclosures.length, 1, "the loaded tail needs its own disclosure before the final answer");
+      assert.equal(disclosures[0].data.anchors[0].group.id, index.groups[0].id);
+      assert.equal(disclosures[0].data.anchors[0].group.at, Date.parse(rows.at(-2)!.timestamp));
+      assert.equal(visible.at(-1), rows.at(-1)!.item, "the native final answer is unchanged");
+      assert.equal(visible.length, 2);
+    }
+  } finally { runtime.dispose(); }
+});
+
+test("native tail anchoring respects merged compaction positions and protected source identities", async () => {
+  const rows = entries([source[0], source[1],
+    {type: "compaction", status: "loading", trigger: "auto"},
+    source[3], {type: "compaction", status: "completed"}, source.at(-1)!,
+  ]);
+  const index = indexTurns("agent", "epoch", rows, idle);
+  assert.equal(index.groups[0].nativeAnchor?.key, itemKey(source[3]), "compaction completes in place before the later tool");
+  const transforms = new Map<string, any>();
+  let response = {status: "ok", ...index};
+  const runtime = createTurnRuntime({rpc: async () => response,
+    addTimelineTransformer: (value: any) => {transforms.set(value.query.itemType, value); return () => transforms.delete(value.query.itemType);},
+  } as any, true);
+  try {
+    await runtime.refresh("agent");
+    assert.equal(transforms.get("tool_call").transform({item: source[3], phase: "complete"}).items[0].kind, "turn-disclosure");
+    response = {...response, protected: [index.groups[0].anchor]};
+    await runtime.refresh("agent");
+    assert.equal(transforms.get("tool_call").transform({item: source[3], phase: "complete"}), undefined, "a relocated header cannot bypass source identity protection");
+  } finally {runtime.dispose();}
+});
+
+test("a native disclosure on the final compaction resolves its merged loading timestamp", async () => {
+  const rows = entries([source[0], source[1],
+    {type: "compaction", status: "loading", trigger: "auto", preTokens: 128000},
+    {type: "compaction", status: "completed"}, source.at(-1)!,
+  ]);
+  const index = indexTurns("agent", "epoch", rows, idle);
+  const transforms = new Map<string, any>();
+  const runtime = createTurnRuntime({rpc: async () => ({status: "ok", ...index}),
+    addTimelineTransformer: (value: any) => {transforms.set(value.query.itemType, value); return () => transforms.delete(value.query.itemType);},
+  } as any, true);
+  try {
+    await runtime.refresh("agent");
+    const merged = {type: "compaction", status: "completed", trigger: "auto", preTokens: 128000};
+    const transformed = transforms.get("compaction").transform({item: merged, phase: "complete"});
+    const target = resolveCompaction(transformed.items[0].data.targets, "agent", Date.parse(rows[2].timestamp));
+    assert.equal(target?.anchors[0].group.id, index.groups[0].id);
+    assert.equal(target?.anchors[0].group.at, Date.parse(rows[2].timestamp));
+  } finally {runtime.dispose();}
 });
 
 test("an unavailable history index restores native rendering", async () => {

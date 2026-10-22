@@ -72,18 +72,18 @@ test("the Android client entry keeps a stable outer projection and cleans up wit
     assert.ok(reads > 0); assert.equal(transforms.size, 4);
     const transform = (item: unknown) => transforms.get((item as any).type).transform({ item, phase: "complete" });
     assert.equal(transform(final), undefined);
-    assert.equal(transform(tool).items.length, 0);
-    const before = transform(progress).items[0]; renderers.get(before.kind).schema.parse(before.data);
-    const renderer = renderers.get(before.kind).Component({agentId: "agent", item: before, timestamp: new Date(1001)});
+    assert.equal(transform(progress).items.length, 0);
+    const before = transform(tool).items[0]; renderers.get(before.kind).schema.parse(before.data);
+    const renderer = renderers.get(before.kind).Component({agentId: "agent", item: before, timestamp: new Date(1002)});
     const runtime = renderer.props.runtime;
     assert.equal(runtime.inline, true);
     let updates = 0; const unsubscribe = runtime.subscribe(index.groups[0].id, () => updates++);
     runtime.toggle(index.groups[0].id);
     assert.equal(runtime.isExpanded(index.groups[0].id), true);
-    assert.deepEqual(transform(progress).items[0], before, "the row's payload and renderer identity stay unchanged");
-    assert.equal(transform(tool).items.length, 0); assert.equal(transform(final), undefined);
+    assert.deepEqual(transform(tool).items[0], before, "the row's payload and renderer identity stay unchanged");
+    assert.equal(transform(progress).items.length, 0); assert.equal(transform(final), undefined);
     runtime.toggle(index.groups[0].id); unsubscribe(); assert.equal(updates, 2);
-    assert.equal(transform(tool).items.length, 0);
+    assert.equal(transform(progress).items.length, 0);
   } finally {
     for (const release of effects.reverse()) release();
     cleanup();

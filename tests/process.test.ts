@@ -26,13 +26,14 @@ test("inline expansion never replaces outer rows or re-registers transformers", 
   const runtime = createTurnRuntime({rpc: async (rpc: any) => {reads++; assert.equal(rpc.name, "turns.index"); return {status: "ok", ...f.index};},
     addTimelineTransformer: (value: any) => {registrations++; transforms.set(value.query.itemType, value); return () => {removals++;};}} as any, true);
   await runtime.refresh("agent");
-  const original = transforms.get("assistant_message"), payload = original.transform({item: input[1], phase: "complete"});
+  const original = transforms.get("tool_call"), payload = original.transform({item: input[2], phase: "complete"});
+  assert.equal(payload.items[0].kind, "turn-disclosure");
   let notifications = 0; const stop = runtime.subscribe(f.index.groups[0].id, () => notifications++);
   for (let i = 0; i < 50; i++) runtime.toggle(f.index.groups[0].id);
   assert.equal(registrations, 4); assert.equal(removals, 0); assert.equal(reads, 1); assert.equal(notifications, 50);
-  assert.equal(transforms.get("assistant_message"), original); assert.deepEqual(original.transform({item: input[1], phase: "complete"}), payload);
-  assert.deepEqual(transforms.get("tool_call").transform({item: input[2], phase: "complete"}), {items: []});
-  assert.equal(original.transform({item: input[3], phase: "complete"}), undefined);
+  assert.equal(transforms.get("tool_call"), original); assert.deepEqual(original.transform({item: input[2], phase: "complete"}), payload);
+  assert.deepEqual(transforms.get("assistant_message").transform({item: input[1], phase: "complete"}), {items: []});
+  assert.equal(transforms.get("assistant_message").transform({item: input[3], phase: "complete"}), undefined);
   stop(); runtime.dispose(); assert.equal(removals, 4);
 });
 test("inline global controls notify existing blocks while leaving the projection untouched", async () => {

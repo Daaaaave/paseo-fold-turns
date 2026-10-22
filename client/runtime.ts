@@ -1,6 +1,6 @@
 import type { PluginClientContext, PluginTimelineTransformerContribution } from "@getpaseo/plugin/client";
 import { indexRpc, processRpc, type ProcessPage } from "../shared/contracts.ts";
-import { compactionSignature, itemKey, projectIndexes, type CompactionTarget, type Item, type Role, type TurnIndex } from "../shared/model.ts";
+import { compactionSignature, itemKey, projectIndexes, runningToolSignature, type CompactionTarget, type Item, type Role, type TurnIndex } from "../shared/model.ts";
 import type { NativeFoldChange } from "../shared/native-anchor.ts";
 
 const TYPES = ["assistant_message", "reasoning", "tool_call", "compaction"] as const;
@@ -133,7 +133,26 @@ export function createTurnRuntime(client: PluginClientContext, inline = false): 
     if (disposed) return;
     // Inline expansion is local state inside ONE existing cell. Outer rows and
     // transformer registrations remain identical across every disclosure click.
-    const roles = projectIndexes([...indexes.values()], inline ? new Set() : expanded);
+    const sourceIndexes = [...indexes.values()];
+    const obsoleteTools = new Map<string, Set<string>>();
+    for (const index of sourceIndexes) for (const tool of index.supersededTools ?? []) {
+      // Transformer input omits agent identity. Conflicting live occurrences in
+      // other viewed chats must keep their native controls.
+      if (sourceIndexes.some(other => other.protected.includes(tool.key) &&
+        !other.supersededTools?.some(candidate => candidate.key === tool.key && candidate.signature === tool.signature))) continue;
+      const signatures = obsoleteTools.get(tool.key) ?? new Set<string>();
+      signatures.add(tool.signature); obsoleteTools.set(tool.key, signatures);
+    }
+    const sourceRoles = projectIndexes(sourceIndexes, inline ? new Set() : expanded);
+    const viewedIndexes = inline ? sourceIndexes.map(index => ({ ...index,
+      groups: index.groups
+        // Preserve the server's eligibility and identity-conflict protection
+        // before relocating a native disclosure to its loaded history tail.
+        .filter(group => sourceRoles.get(group.anchor)?.anchors.some(anchor => anchor.group.id === group.id))
+        .map(group => group.nativeAnchor
+          ? { ...group, anchor: group.nativeAnchor.key, at: group.nativeAnchor.at } : group),
+    })) : sourceIndexes;
+    const roles = inline ? projectIndexes(viewedIndexes, new Set()) : sourceRoles;
     const compactions = new Map<string, CompactionTarget[]>();
     for (const index of indexes.values()) for (const group of index.groups) for (const marker of group.markers) {
       const role = roles.get(marker.key);
@@ -148,6 +167,8 @@ export function createTurnRuntime(client: PluginClientContext, inline = false): 
       // Each registration closes over an immutable snapshot, so host memoization
       // is invalidated through the public registration lifecycle when roles change.
       transform: ({ item, phase }: { item: Item; phase: "streaming" | "complete" }) => {
+        const signature = runningToolSignature(item), toolKey = signature ? itemKey(item) : null;
+        if (toolKey && signature && obsoleteTools.get(toolKey)?.has(signature)) return {items: []};
         if (phase === "streaming") return undefined;
         if (item.type === "compaction") {
           const targets = compactions.get(compactionSignature(item));

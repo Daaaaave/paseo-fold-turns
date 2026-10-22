@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.2.4
+
+Keep the native fold control in the initially loaded history page when opening
+or switching long chats. Preserve desktop placement and native inline expansion.
+Account for context compaction completing in its original position.
+
+Retire an obsolete running tool placeholder when a later event records its
+outcome. Keep the terminal result, including errors, visible and preserve live
+commands when tool identities are ambiguous across viewed chats.
+
 ## 0.2.3
 
 Fold completed work even when a preview server or another background command is

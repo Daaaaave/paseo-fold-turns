@@ -35,11 +35,16 @@ context or stored conversation.
 A completed answer can leave a preview server or another background command
 running. That command keeps its native status and controls while the completed
 process folds normally; it does not hold the entire turn open.
+If Paseo records a later outcome for the same command as a separate row, the
+obsolete running placeholder disappears. The outcome, including failures,
+remains visible with its native controls.
 
 On desktop and web, expanded turns use the existing Paseo rows. Android and iOS
 use one persistent inline process block with selectable Markdown, expandable tool
 details, code copying, and additional entries loaded on demand. The final answer
 uses Paseo's normal renderer on every platform.
+The native disclosure sits immediately before the answer so it is available
+in the history page loaded when opening or switching chats, even for long turns.
 
 ## Data access and limits
 

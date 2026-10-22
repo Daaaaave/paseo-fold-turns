@@ -1,5 +1,5 @@
 import type { ProcessItem } from "./contracts.ts";
-import { compactionLabel, entryKey, turnSegments, type Entry, type Group } from "./model.ts";
+import { coalesceCompactions, compactionLabel, entryKey, turnSegments, type Entry, type Group } from "./model.ts";
 
 const FIELD_LIMIT = 16_000;
 export const PAGE_SIZE = 40;
@@ -41,14 +41,5 @@ export function processRows(agentId: string, epoch: string, entries: Entry[], gr
   const segment = turnSegments(entries).find(rows => group.id === `${agentId}:${epoch}:${rows[0].seqStart}`) ?? [];
   const final = segment.findLastIndex(row => row.item.type === "assistant_message" && !!row.item.text?.trim());
   const rows = segment.slice(0, Math.max(0, final)).filter(row => { const key = entryKey(agentId, row); return key && keys.has(key); });
-  const result: Entry[] = [], pending: number[] = [];
-  for (const row of rows) {
-    if (row.item.type === "compaction" && row.item.status === "loading") { pending.push(result.length); result.push(row); }
-    else if (row.item.type === "compaction" && row.item.status === "completed" && pending.length) {
-      const at = pending.shift()!; const loading = result[at];
-      result[at] = { ...loading, item: { ...loading.item, ...row.item,
-        trigger: row.item.trigger ?? loading.item.trigger, preTokens: row.item.preTokens ?? loading.item.preTokens } };
-    } else result.push(row);
-  }
-  return result;
+  return coalesceCompactions(rows);
 }

@@ -10,11 +10,15 @@ export interface Item {
 export interface Entry { item: Item; seqStart: number; seqEnd: number; timestamp: string; turnId?: string | null }
 export interface Group {
   id: string; anchor: string; at: number; keys: string[];
+  nativeAnchor?: { key: string; at: number };
   tools: number; messages: number; thinking: number; compactions: number; kinds: string[];
   markers: { key: string; at: number; signature: string }[];
 }
-export interface TurnIndex { agentId: string; epoch: string; groups: Group[]; protected: string[] }
-export type DisplayGroup = Omit<Group, "anchor" | "keys" | "markers">;
+export interface TurnIndex {
+  agentId: string; epoch: string; groups: Group[]; protected: string[];
+  supersededTools?: { key: string; signature: string }[];
+}
+export type DisplayGroup = Omit<Group, "anchor" | "keys" | "markers" | "nativeAnchor">;
 export interface CompactionTarget {
   key: string; agentId: string; at: number; hidden: boolean;
   anchors: { agentId: string; group: DisplayGroup; expanded: boolean }[];
@@ -31,6 +35,28 @@ export function itemKey(item: Item): string | null {
   if (item.type === "reasoning") return `r:${fingerprint(item.text ?? "")}`;
   if (item.type === "tool_call") return item.callId ? `t:${item.callId}` : null;
   return null;
+}
+/** Match the exact old placeholder, without sending tool arguments in the index. */
+export function runningToolSignature(item: Item): string | null {
+  return item.type === "tool_call" && item.status === "running" && item.callId
+    ? fingerprint(JSON.stringify([item.name ?? null, item.detail ?? null, item.metadata ?? null])) : null;
+}
+
+function supersededTools(entries: Entry[]): NonNullable<TurnIndex["supersededTools"]> {
+  const latest = new Map<string, Entry>();
+  for (const entry of entries) if (entry.item.type === "tool_call" && entry.item.callId) {
+    const previous = latest.get(entry.item.callId);
+    if (!previous || previous.seqEnd < entry.seqEnd) latest.set(entry.item.callId, entry);
+  }
+  const obsolete = new Map<string, {key: string; signature: string}>();
+  for (const entry of entries) {
+    const signature = runningToolSignature(entry.item), key = itemKey(entry.item);
+    const outcome = entry.item.callId ? latest.get(entry.item.callId) : undefined;
+    if (key && signature && outcome && outcome.seqEnd > entry.seqEnd && ["completed", "failed", "canceled"].includes(outcome.item.status ?? "")) {
+      obsolete.set(`${key}:${signature}`, {key, signature});
+    }
+  }
+  return [...obsolete.values()];
 }
 export function compactionSignature(item: Item): string {
   return JSON.stringify([item.status, item.trigger ?? null, item.preTokens ?? null]);
@@ -98,6 +124,20 @@ export function turnSegments(entries: Entry[]): Entry[][] {
   return segments;
 }
 
+/** Paseo completes a compaction in its original loading row, preserving time. */
+export function coalesceCompactions(rows: Entry[]): Entry[] {
+  const result: Entry[] = [], pending: number[] = [];
+  for (const row of rows) {
+    if (row.item.type === "compaction" && row.item.status === "loading") { pending.push(result.length); result.push(row); }
+    else if (row.item.type === "compaction" && row.item.status === "completed" && pending.length) {
+      const at = pending.shift()!; const loading = result[at];
+      result[at] = { ...loading, item: { ...loading.item, ...row.item,
+        trigger: row.item.trigger ?? loading.item.trigger, preTokens: row.item.preTokens ?? loading.item.preTokens } };
+    } else result.push(row);
+  }
+  return result;
+}
+
 /** Only complete turns with a proven final text response are eligible. */
 export function indexTurns(agentId: string, epoch: string, entries: Entry[], state: { running: boolean; activeTurnId?: string | null; pending: boolean; failed: boolean; hasOlder: boolean }): TurnIndex {
   const result: TurnIndex = { agentId, epoch, groups: [], protected: [] };
@@ -132,8 +172,17 @@ export function indexTurns(agentId: string, epoch: string, entries: Entry[], sta
       for (const row of process) result.protected.push(keyOf(row)!);
       continue;
     }
+    // Native clients initially fetch only a history tail. A disclosure at the
+    // beginning of a long turn can be outside that page while every loaded
+    // process row is hidden, leaving nothing to scroll through for pagination.
+    // Anchor to the final *displayed* process row, accounting for compaction's
+    // in-place completion, and keep the desktop's leading disclosure intact.
+    const nativeRow = coalesceCompactions(process).at(-1)!;
+    const nativeSource = process.find(row => row.seqStart === nativeRow.seqStart)!;
+    const nativeAt = Date.parse(nativeRow.timestamp);
     result.groups.push({
       id: `${agentId}:${epoch}:${rows[0].seqStart}`, anchor: keyOf(anchor)!, at: Date.parse(anchor.timestamp),
+      nativeAnchor: Number.isFinite(nativeAt) ? { key: keyOf(nativeSource)!, at: nativeAt } : undefined,
       keys: [...new Set(process.map(row => keyOf(row)!))],
       tools: process.filter(row => row.item.type === "tool_call").length,
       messages: process.filter(row => row.item.type === "assistant_message").length,
@@ -144,6 +193,10 @@ export function indexTurns(agentId: string, epoch: string, entries: Entry[], sta
     });
   }
   result.protected = [...new Set(result.protected)];
+  // A detached command can finish after the final answer without a turn ID.
+  // Paseo may retain its old running row as well as the later terminal event.
+  // Keep the outcome native; retire only the exact obsolete running snapshot.
+  result.supersededTools = supersededTools(entries);
   return result;
 }
 

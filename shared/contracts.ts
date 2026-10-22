@@ -2,11 +2,12 @@ import { defineRpc } from "@getpaseo/plugin";
 import { z } from "zod";
 import type { MarkdownNode } from "./markdown.ts";
 
-export const groupSchema = z.object({ id: z.string(), anchor: z.string(), at: z.number(), keys: z.array(z.string()), tools: z.number(), messages: z.number(), thinking: z.number(), compactions: z.number(), kinds: z.array(z.string()), markers: z.array(z.object({ key: z.string(), at: z.number(), signature: z.string() })) });
+export const groupSchema = z.object({ id: z.string(), anchor: z.string(), at: z.number(), keys: z.array(z.string()), nativeAnchor: z.object({ key: z.string(), at: z.number() }).optional(), tools: z.number(), messages: z.number(), thinking: z.number(), compactions: z.number(), kinds: z.array(z.string()), markers: z.array(z.object({ key: z.string(), at: z.number(), signature: z.string() })) });
 export const indexRpc = defineRpc({
   name: "turns.index",
   input: z.object({ agentId: z.string().min(1).max(256) }).strict(),
-  output: z.object({ status: z.enum(["ok", "unavailable"]), agentId: z.string(), epoch: z.string(), groups: z.array(groupSchema), protected: z.array(z.string()) }),
+  output: z.object({ status: z.enum(["ok", "unavailable"]), agentId: z.string(), epoch: z.string(), groups: z.array(groupSchema), protected: z.array(z.string()),
+    supersededTools: z.array(z.object({key: z.string(), signature: z.string()})).optional() }),
 });
 export const statusRpc = defineRpc({ name: "turns.status", input: z.object({}).strict(), output: z.object({ requests: z.number(), lastSuccessfulAt: z.number().nullable(), lastGroupCount: z.number() }) });
 const markdownNodeSchema: z.ZodType<MarkdownNode> = z.lazy(() => z.object({
@@ -29,7 +30,7 @@ export const processRpc = defineRpc({
 });
 export type ProcessItem = z.output<typeof processItemSchema>;
 export type ProcessPage = z.output<typeof processPageSchema>;
-const anchorsSchema = z.array(z.object({ agentId: z.string(), group: groupSchema.omit({ keys: true, anchor: true, markers: true }), expanded: z.boolean() }));
+const anchorsSchema = z.array(z.object({ agentId: z.string(), group: groupSchema.omit({ keys: true, anchor: true, markers: true, nativeAnchor: true }), expanded: z.boolean() }));
 export const rowSchema = z.object({
   key: z.string(),
   anchors: anchorsSchema,
